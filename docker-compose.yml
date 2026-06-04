@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  image_analyser:
+    build: ./code_Image_Analyser
+    container_name: image_analyser
+    ports:
+      - "8002:8002"
+    networks:
+      - triage_network
+
+  property_triage:
+    build: ./code_Property_Triage
+    container_name: property_triage
+    ports:
+      - "8003:8003"
+    # הקסם החדש: קישור תיקייה מקומית לתוך הקונטיינר
+    volumes:
+      - ./shared_logs:/app/logs
+    networks:
+      - triage_network
+
+networks:
+  triage_network:
+    driver: bridge

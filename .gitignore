@@ -1,0 +1,15 @@
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# IDE settings
+.idea/
+
+# Local shared logs/data (optional, if you don't want to upload your CSV logs)
+shared_logs/
+
+# Operating system files
+.DS_Store
+Thumbs.db

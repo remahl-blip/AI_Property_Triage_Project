@@ -16,6 +16,8 @@ services:
   property_triage:
     build: ./code_Property_Triage
     container_name: property_triage
+    # פקודה מפורשת שמפעילה את triage_service.py במקום main.py
+    command: uvicorn triage_service:app --host 0.0.0.0 --port 8003
     ports:
       - "8003:8003"
     environment:
@@ -28,14 +30,14 @@ services:
   image_analyser:
     build: ./code_Image_Analyser
     container_name: image_analyser
+    # פקודה מפורשת שמפעילה את app.py במקום main.py
+    command: uvicorn app:app --host 0.0.0.0 --port 8002
     ports:
       - "8002:8002"
     depends_on:
       - property_triage
     networks:
       - triage_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   frontend_ui:
     build: ./code_Frontend_UI

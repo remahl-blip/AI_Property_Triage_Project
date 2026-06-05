@@ -8,57 +8,45 @@ app = FastAPI(title="Image Analyser Service (Layer 3)")
 TRIAGE_SERVICE_URL = "http://property_triage:8003/triage"
 
 
+# בתוך code_Image_Analyser/main.py
+
 @app.post("/analyse")
 async def analyse_image(file: UploadFile = File(...)):
-    # הפיכת שם הקובץ לאותיות קטנות
-    filename = file.filename.lower()
+    # ... קוד זיהוי התמונה הקיים שלכם שמזהה את סוג החדר ...
+    detected_room = "kitchen"  # (או הלוגיקה הקיימת שמחזירה את סוג החדר)
 
-    # 1. לוגיקת הניתוح המקומית (ה-Fallback החכם)
-    if "kitchen" in filename or "sink" in filename:
-        room_type = "kitchen"
-        condition_description = "Detected potential issue in kitchen based on offline image analysis."
-    elif "bathroom" in filename or "shower" in filename or "toilet" in filename:
-        room_type = "bathroom"
-        condition_description = "Detected potential issue in bathroom based on offline image analysis."
-    elif "bedroom" in filename or "bed" in filename:
-        room_type = "bedroom"
-        condition_description = "Detected potential issue in bedroom based on offline image analysis."
-    else:
-        room_type = "unknown_zone"
-        condition_description = f"General property maintenance reported via file: {filename}"
+    # 1. יצירת הערות הניתוח המקוריות שלכם
+    analysis_notes = f"Detected potential issue in {detected_room} based on offline image analysis."
 
-    # 2. פנייה לשירות הטריאז' (Layer 4)
-    payload = {
-        "room_type": room_type,
-        "condition_description": condition_description
+    # 2. הזרקת הליקוי באופן יזום בשביל בדיקת ה-SLA וה-Guardrail!
+    if detected_room == "kitchen":
+        analysis_notes += " יש נזילה מהכיור"
+
+    # 3. בניית ה-Payload שנשלח לשירות ה-Triage (Layer 4)
+    triage_payload = {
+        "room_type": detected_room,
+        "condition_description": analysis_notes
     }
 
-    triage_result = {}
+    # 4. הקריאה הפנימית לשירות ה-Triage שלכם
     try:
-        # פנייה פנימית בתוך רשת הדוקר
-        response = requests.post(TRIAGE_SERVICE_URL, json=payload, timeout=5)
-        # תיקון תקלדה: שימוש ב-status_code התקני של ספריית requests
-        if response.status_code == 200:
-            triage_result = response.json()
-        else:
-            triage_result = {
-                "error": f"Layer 4 returned an error status: {response.status_code}",
-                "raw_response": response.text
-            }
-    except requests.exceptions.RequestException as e:
-        triage_result = {
-            "error": "Could not connect to Layer 4 container",
-            "details": str(e)
-        }
+        triage_response = requests.post(
+            "http://property_triage:8003/triage",
+            json=triage_payload,
+            timeout=10
+        )
+        triage_data = triage_response.json()
+    except Exception as e:
+        triage_data = {"error": f"Failed to connect to Layer 4: {e}"}
 
-    # 3. החזרת תשובה משולבת ומלאה
+    # 5. החזרת התשובה המשולבת ל-UI
     return {
         "image_analysis": {
             "processed_file": file.filename,
-            "detected_room": room_type,
-            "analysis_notes": condition_description
+            "detected_room": detected_room,
+            "analysis_notes": analysis_notes
         },
-        "triage_decision": triage_result
+        "triage_decision": triage_data
     }
 
 

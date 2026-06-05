@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 8003
 
-CMD ["python", "triage_service.py"]
+CMD ["uvicorn", "triage_service:app", "--host", "0.0.0.0", "--port", "8003"]

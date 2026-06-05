@@ -1,11 +1,15 @@
 version: '3.8'
 
 services:
-  image_analyser:
-    build: ./code_Image_Analyser
-    container_name: image_analyser
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: property_triage_db
     ports:
-      - "8002:8002"
+      - "5432:5432"
     networks:
       - triage_network
 
@@ -14,9 +18,32 @@ services:
     container_name: property_triage
     ports:
       - "8003:8003"
-    # הקסם החדש: קישור תיקייה מקומית לתוך הקונטיינר
-    volumes:
-      - ./shared_logs:/app/logs
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres_db:5432/property_triage_db
+    depends_on:
+      - postgres_db
+    networks:
+      - triage_network
+
+  image_analyser:
+    build: ./code_Image_Analyser
+    container_name: image_analyser
+    ports:
+      - "8002:8002"
+    depends_on:
+      - property_triage
+    networks:
+      - triage_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend_ui:
+    build: ./code_Frontend_UI
+    container_name: frontend_ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - image_analyser
     networks:
       - triage_network
 

@@ -4,7 +4,7 @@ import requests
 # הגדרות עמוד ראשיות
 st.set_page_config(page_title="AI Property Triage Dashboard", page_icon="🏢", layout="wide")
 
-IMAGE_ANALYSER_URL = "http://image_analyser:8002/analyse"git status
+IMAGE_ANALYSER_URL = "http://image_analyser:8002/analyse"
 
 st.title("🏢 AI Property Triage & Compliance Dashboard")
 st.markdown("Upload a property inspection image to run real-time AI analysis and compliance routing.")

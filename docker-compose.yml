@@ -29,11 +29,12 @@ services:
 
   image_analyser:
     build: ./code_Image_Analyser
-    container_name: image_analyser
-    # פקודה מפורשת שמפעילה את app.py במקום main.py
     command: uvicorn app:app --host 0.0.0.0 --port 8002
     ports:
       - "8002:8002"
+    # דוקר ימשוך את המפתח אוטומטית מקובץ ה-.env שבתיקייה הראשי
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - property_triage
     networks:

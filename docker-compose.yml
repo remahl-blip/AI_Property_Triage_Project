@@ -3,21 +3,19 @@ version: '3.8'
 services:
   postgres_db:
     image: postgres:15-alpine
-    container_name: postgres_db
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: property_triage_db
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - triage_network
 
   property_triage:
     build: ./code_Property_Triage
-    container_name: property_triage
-    # פקודה מפורשת שמפעילה את triage_service.py במקום main.py
-    command: uvicorn triage_service:app --host 0.0.0.0 --port 8003
     ports:
       - "8003:8003"
     environment:
@@ -29,12 +27,25 @@ services:
 
   image_analyser:
     build: ./code_Image_Analyser
-    command: uvicorn app:app --host 0.0.0.0 --port 8002
     ports:
       - "8002:8002"
-    # דוקר ימשוך את המפתח אוטומטית מקובץ ה-.env שבתיקייה הראשי
+    env_file:
+      - .env
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+    depends_on:
+      - property_triage
+    networks:
+      - triage_network
+
+  property_agent:
+    build: ./code_LangGraph_Agent
+    ports:
+      - "8004:8004"
+    env_file:
+      - .env
+    environment:
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
     depends_on:
       - property_triage
     networks:
@@ -42,14 +53,17 @@ services:
 
   frontend_ui:
     build: ./code_Frontend_UI
-    container_name: frontend_ui
     ports:
       - "8501:8501"
     depends_on:
       - image_analyser
+      - property_agent
     networks:
       - triage_network
 
 networks:
   triage_network:
     driver: bridge
+
+volumes:
+  postgres_data:

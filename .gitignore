@@ -12,5 +12,7 @@ shared_logs/
 
 # Operating system files
 .DS_Store
-Thumbs.dbgit config --global user.email "remahlehl@gmail.com"git push -u origin main
-.envgit add .
+Thumbs.db
+
+# Secrets
+.env

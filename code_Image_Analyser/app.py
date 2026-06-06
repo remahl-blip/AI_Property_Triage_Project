@@ -11,6 +11,7 @@ app = FastAPI(title="Image Analyser Service (Layer 3)")
 
 # הגדרת מפתח ה-API של Gemini מתוך משתני הסביבה
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 genai.configure(api_key=GEMINI_API_KEY)
 
 TRIAGE_SERVICE_URL = "http://property_triage:8003/triage"
@@ -24,7 +25,7 @@ async def analyse_image(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(image_bytes))
 
         # 2. פנייה למודל Gemini 1.5 Flash לקבלת JSON מובנה
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel(GEMINI_MODEL)
 
         prompt = (
             "You are an expert property inspection and compliance AI.\n"

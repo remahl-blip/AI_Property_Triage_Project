@@ -17,6 +17,4 @@ COPY . .
 EXPOSE 8002
 
 # 7. נגדיר את הפקודה שתרוץ אוטומטית כשהקונטיינר יופעל
-CMD ["python", "app.py"]
-
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8002"]

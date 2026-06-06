@@ -1,11 +1,17 @@
 import os
-import io
 import json
-from typing import Annotated, TypedDict, List
-from fastapi import FastAPI, HTTPException
+from typing import TypedDict, List
+from fastapi import FastAPI
 from pydantic import BaseModel
 import requests
+from google.genai import types
 from dotenv import load_dotenv
+from gemini_config import (
+    create_gemini_client_safe,
+    describe_auth_setup,
+    get_auth_mode,
+    get_gemini_model,
+)
 
 load_dotenv()
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
@@ -14,31 +20,8 @@ if os.path.exists(dotenv_path):
 
 app = FastAPI(title="Property Compliance & Triage Operations AI")
 
-def get_sanitized_api_key() -> str:
-    key = os.getenv("GEMINI_API_KEY", "")
-    if not key:
-        paths = ['.env', '../.env', '../../.env', '/app/.env']
-        for p in paths:
-            if os.path.exists(p):
-                try:
-                    with open(p, 'r') as f:
-                        for line in f:
-                            if line.strip().startswith("GEMINI_API_KEY"):
-                                parts = line.split("=", 1)
-                                if len(parts) > 1:
-                                    key = parts[1].strip()
-                                    break
-                except Exception:
-                    pass
-            if key:
-                break
-    if key:
-        key = key.replace('"', '').replace("'", "").strip()
-        key = "".join(key.split())
-    return key
-
-GEMINI_API_KEY = get_sanitized_api_key()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = get_gemini_model()
+gemini_client = create_gemini_client_safe()
 
 def parse_json_from_model_reply(reply: str) -> dict:
     clean = reply.strip()
@@ -49,51 +32,127 @@ def parse_json_from_model_reply(reply: str) -> dict:
     return json.loads(clean)
 
 def call_gemini_direct(prompt: str, system_instruction: str = None) -> str:
-    if not GEMINI_API_KEY:
+    if not gemini_client:
+        if get_auth_mode() == "vertex_ai":
+            raise ValueError(
+                "Vertex AI is enabled but not configured. Set GOOGLE_CLOUD_PROJECT and "
+                "mount a service-account JSON at GOOGLE_APPLICATION_CREDENTIALS."
+            )
         raise ValueError("GEMINI_API_KEY is empty or missing")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": ""
-    }
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
-    }
+
+    config = None
     if system_instruction:
-        payload["systemInstruction"] = {
-            "parts": [
-                {"text": system_instruction}
-            ]
+        config = types.GenerateContentConfig(system_instruction=system_instruction)
+
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=config,
+    )
+    if not response or not response.text:
+        raise ValueError("Empty response from Gemini API")
+    return response.text.strip()
+
+HISTORY_KEYWORDS = (
+    "history", "ticket", "tickets", "past", "previous", "report", "reports",
+    "היסטוריה", "כרטיס", "כרטיסים", "דיווח", "דיווחים", "דוחות",
+)
+ISSUE_KEYWORDS = (
+    "leak", "broken", "issue", "problem", "flood", "mold", "fire", "repair",
+    "נזילה", "שבור", "תקלה", "בעיה", "הצפה", "עובש", "תיקון",
+)
+ROOM_KEYWORDS = {
+    "kitchen": ("kitchen", "מטבח"),
+    "bathroom": ("bathroom", "שירותים", "אמבטיה"),
+    "bedroom": ("bedroom", "חדר שינה"),
+    "living room": ("living room", "סלון"),
+    "hallway": ("hallway", "מסדרון"),
+}
+
+def detect_room_type(text: str) -> str:
+    lowered = text.lower()
+    for room, keywords in ROOM_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return room
+    return "unknown"
+
+def wants_history_lookup(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in HISTORY_KEYWORDS)
+
+def wants_new_issue(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in ISSUE_KEYWORDS)
+
+def summarize_history_offline(raw_history: str) -> str:
+    try:
+        records = json.loads(raw_history)
+    except json.JSONDecodeError:
+        return raw_history
+
+    if not records:
+        return "אין עדיין דיווחים שמורים במערכת."
+
+    lines = ["סיכום דיווחים אחרונים:"]
+    for record in records[:5]:
+        lines.append(
+            f"- {record.get('ticket_id', 'N/A')}: {record.get('room_type', 'unknown')} | "
+            f"{record.get('priority', 'N/A')} | {record.get('compliance_status', 'N/A')}"
+        )
+    if len(records) > 5:
+        lines.append(f"... ועוד {len(records) - 5} דיווחים נוספים.")
+    return "\n".join(lines)
+
+def summarize_triage_offline(raw_triage: str) -> str:
+    try:
+        record = json.loads(raw_triage)
+    except json.JSONDecodeError:
+        return f"הדיווח נשמר. פרטים: {raw_triage}"
+
+    audit = record.get("audit_report", {})
+    return (
+        "הדיווח נשמר בהצלחה.\n"
+        f"מספר כרטיס: {audit.get('ticket_id', 'N/A')}\n"
+        f"עדיפות: {record.get('priority', 'N/A')}\n"
+        f"סטטוס: {audit.get('compliance_status', 'N/A')}\n"
+        f"SLA: {audit.get('sla_deadline', 'N/A')}"
+    )
+
+def offline_agent_decision(user_query: str) -> dict:
+    if wants_history_lookup(user_query):
+        return {"next_step": "call_fetch_history", "tool_output": ""}
+
+    if wants_new_issue(user_query):
+        return {
+            "next_step": "call_triage_issue",
+            "tool_output": json.dumps({
+                "action": "triage_issue",
+                "room_type": detect_room_type(user_query),
+                "description": user_query,
+            }),
         }
-    response = requests.post(url, headers=headers, json=payload, timeout=10)
-    if response.status_code == 200:
-        res_data = response.json()
-        try:
-            return res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except (KeyError, IndexError):
-            raise ValueError(f"Unexpected response structure: {res_data}")
-    else:
-        raise ValueError(f"Status {response.status_code}: {response.text}")
+
+    return {
+        "next_step": "respond",
+        "reply": (
+            "שלום! כרגע חיבור Gemini לא זמין (מפתחות AQ חדשים או Vertex AI לא מוגדרים).\n"
+            "אפשר עדיין לנסות: 'הצג היסטוריית דיווחים' או לתאר תקלה חדשה, למשל 'נזילה במטבח'."
+        ),
+    }
 
 print("\n" + "="*50)
-print("[DIAGNOSTIC] Starting Gemini API Connection Test...")
-if GEMINI_API_KEY:
-    masked = f"{GEMINI_API_KEY[:6]}...{GEMINI_API_KEY[-4:]}"
-    print(f"[DIAGNOSTIC] Sanitized Key: {masked} (Length: {len(GEMINI_API_KEY)})")
+print("[DIAGNOSTIC] Starting Gemini Connection Test...")
+print(f"[DIAGNOSTIC] Auth mode: {get_auth_mode()}")
+print(f"[DIAGNOSTIC] Setup: {describe_auth_setup()}")
+if gemini_client:
     try:
         test_reply = call_gemini_direct("Respond with only the word: SUCCESS")
         print(f"[DIAGNOSTIC] TEST RESULT: Connection successful! Gemini responded: {test_reply}")
     except Exception as e:
-        print(f"[DIAGNOSTIC] TEST RESULT: Failed to connect to Gemini API. Error details:")
+        print("[DIAGNOSTIC] TEST RESULT: Failed to connect to Gemini.")
         print(f"             {e}")
 else:
-    print("[DIAGNOSTIC] TEST RESULT: Failed. GEMINI_API_KEY is empty!")
+    print("[DIAGNOSTIC] TEST RESULT: Gemini client not configured.")
 print("="*50 + "\n")
 
 TRIAGE_SERVICE_URL = "http://property_triage:8003"
@@ -161,11 +220,12 @@ def agent_decision_node(state: AgentState) -> AgentState:
             state["next_step"] = "respond"
             state["messages"].append({"role": "assistant", "content": reply})
     except Exception as e:
-        state["next_step"] = "respond"
-        state["messages"].append({
-            "role": "assistant",
-            "content": f"סליחה, נתקלתי בקושי בניתוח הבקשה שלך. שגיאה: {e}"
-        })
+        print(f"[FALLBACK] Gemini unavailable, using rule-based agent. Error: {e}")
+        fallback = offline_agent_decision(user_query)
+        state["next_step"] = fallback["next_step"]
+        state["tool_output"] = fallback.get("tool_output", "")
+        if fallback["next_step"] == "respond":
+            state["messages"].append({"role": "assistant", "content": fallback["reply"]})
     return state
 
 def tool_execution_node(state: AgentState) -> AgentState:
@@ -192,7 +252,12 @@ def tool_execution_node(state: AgentState) -> AgentState:
         reply = call_gemini_direct(summary_prompt)
         state["messages"].append({"role": "assistant", "content": reply})
     except Exception as e:
-        state["messages"].append({"role": "assistant", "content": f"הפעולה בוצעה בהצלחה, אך נכשלה יצירת הסיכום: {e}"})
+        print(f"[FALLBACK] Gemini summary unavailable. Error: {e}")
+        if next_step == "call_fetch_history":
+            reply = summarize_history_offline(result)
+        else:
+            reply = summarize_triage_offline(result)
+        state["messages"].append({"role": "assistant", "content": reply})
     state["next_step"] = "respond"
     return state
 

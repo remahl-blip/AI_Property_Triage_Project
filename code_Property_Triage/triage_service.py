@@ -123,6 +123,37 @@ def evaluate_compliance_and_triage(request: TriageRequest):
         "summary": f"Inspection completed for {room}. Status: {compliance_status}."
     }
 
+@app.get("/history")
+def get_triage_history():
+    """שליפת כל הדיווחים השמורים בבסיס הנתונים עבור ה-Dashboard"""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ticket_id, timestamp, room_type, category, priority, regulation_code, compliance_status, sla_deadline
+            FROM triage_reports
+            ORDER BY timestamp DESC;
+        """)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        history = []
+        for row in rows:
+            history.append({
+                "ticket_id": row[0],
+                "timestamp": str(row[1]),
+                "room_type": row[2],
+                "category": row[3],
+                "priority": row[4],
+                "regulation_code": row[5],
+                "compliance_status": row[6],
+                "sla_deadline": row[7]
+            })
+        return history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history from database: {e}")
+
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -155,3 +186,7 @@ def init_db():
             retries -= 1
             print(f"Database not ready yet ({retries} retries left)... Error: {e}")
             time.sleep(2)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8003)

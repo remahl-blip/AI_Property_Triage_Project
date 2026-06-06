@@ -99,3 +99,38 @@ if uploaded_file is not None:
 
             except requests.exceptions.RequestException as e:
                 st.error(f"Could not connect to the backend services: {e}")
+
+# -------------------------------------------------------------------
+# אזור ה-Dashboard: הצגת היסטוריית דיווחים מטבלת PostgreSQL
+# -------------------------------------------------------------------
+st.markdown("---")
+st.header("📋 Audit History Dashboard")
+st.subheader("All historical property compliance reports saved in PostgreSQL")
+
+HISTORY_URL = "http://property_triage:8003/history"
+
+try:
+    response = requests.get(HISTORY_URL, timeout=5)
+    if response.status_code == 200:
+        history_data = response.json()
+
+        if history_data:
+            import pandas as pd
+
+            df = pd.DataFrame(history_data)
+
+            # שינוי שמות העמודות לתצוגה יפה
+            df.columns = [
+                "Ticket ID", "Timestamp", "Room Type", "Category",
+                "Priority", "Regulation Code", "Compliance Status", "SLA Deadline"
+            ]
+
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("No reports found in the database yet. Run your first analysis above!")
+    else:
+        # תיקון: שימוש נכון ב-st.error בלי פרמטרים שגויים
+        st.error(f"Could not load history from Layer 4. Status code: {response.status_code}")
+except Exception as e:
+    # הודעה ידידותית בזמן שהדוקר מסתנכרן ברקע
+    st.info("🔄 Dashboard is loading... Waiting for background services to sync.")

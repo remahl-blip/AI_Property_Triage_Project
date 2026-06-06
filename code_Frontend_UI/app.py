@@ -1,104 +1,114 @@
 import streamlit as st
 import requests
 
-# הגדרות עמוד ראשיות
-st.set_page_config(page_title="AI Property Triage Dashboard", page_icon="🏢", layout="wide")
+st.set_page_config(
+    page_title="Property Compliance & Triage Operations AI",
+    page_icon="🏢",
+    layout="wide"
+)
 
-IMAGE_ANALYSER_URL = "http://image_analyser:8002/analyse"
+st.title("🏢 Property Compliance & Triage AI Platform")
+st.write("Real-time inspection analysis, automated guardrails, compliance tracking, and Agentic AI operations.")
 
-st.title("🏢 AI Property Triage & Compliance Dashboard")
-st.markdown("Upload a property inspection image to run real-time AI analysis and compliance routing.")
+# הגדרת כתובות ה-API של השירותים השונים בתוך רשת ה-Docker
+ANALYSE_URL = "http://image_analyser:8002/analyse"
+AGENT_URL = "http://property_agent:8004/chat"
+HISTORY_URL = "http://property_triage:8003/history"
 
-st.sidebar.header("System Status")
-st.sidebar.success("Layer 3: Connected")
-st.sidebar.success("Layer 4: Connected")
-st.sidebar.info("Logs: Active (CSV Shared Volume)")
+# חלוקת הממשק לשתי לשוניות (Tabs)
+tab1, tab2 = st.tabs(["📸 Image Compliance Analysis", "💬 Operations AI Copilot"])
 
-# אזור העלאת הקובץ
-uploaded_file = st.file_uploader("Choose an inspection image...", type=["jpg", "jpeg", "png", "jfif"])
+# -------------------------------------------------------------------
+# לשונית 1: ניתוח תמונות וקומפליינס (הממשק המקורי)
+# -------------------------------------------------------------------
+with tab1:
+    st.header("📸 Property Visual Inspection")
+    st.subheader("Upload an inspection photo to evaluate safety and maintenance SLA")
 
-if uploaded_file is not None:
-    # הצגת התמונה שנבחרה על המסך
-    st.image(uploaded_file, caption="Uploaded Inspection Image", width=400)
+    uploaded_file = st.file_uploader("Choose an inspection image...", type=["jpg", "jpeg", "png"])
 
-    # -------------------------------------------------------------
-    # הוספת תיבת הקלט החדשה עבור ה-Input Guardrail ו-Layer 4
-    # -------------------------------------------------------------
-    condition_description = st.text_input(
-        "תיאור הליקוי / Condition Description",
-        value="יש נזילה מהכיור"  # ברירת מחדל מוכנה לבדיקה מהירה
-    )
+    if uploaded_file is not None:
+        st.image(uploaded_file, caption="Uploaded Inspection Image", use_container_width=True)
 
-    # כפתור ההרצה הקיים שלך (יופעל כעת יחד עם התיאור שהוזן)
-    if st.button("Run AI Triage Analysis", type="primary"):
-        with st.spinner("Processing image and evaluating compliance regulations..."):
+        if st.button("🔥 Run Compliance & Triage Analysis", type="primary"):
+            with st.spinner("Processing image and evaluating regulations..."):
+                try:
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                    response = requests.post(ANALYSE_URL, files=files, timeout=15)
+
+                    if response.status_code == 200:
+                        result = response.json()
+
+                        st.success("Analysis Completed Successfully!")
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.subheader("Visual AI Insights (Layer 3)")
+                            st.write(f"**Detected Room:** {result['image_analysis']['detected_room'].upper()}")
+                            st.info(result['image_analysis']['analysis_notes'])
+
+                        with col2:
+                            st.subheader("Compliance & Triage Verdict (Layer 4)")
+                            triage = result['triage_decision']
+                            if "error" in triage:
+                                st.error(triage["error"])
+                            else:
+                                st.write(f"**Priority:** {triage['priority']}")
+                                st.write(f"**Compliance:** {triage['audit_report']['compliance_status']}")
+                                st.write(f"**Required Action:** {triage['audit_report']['required_action']}")
+                                st.metric(label="SLA Deadline", value=triage['audit_report']['sla_deadline'])
+                                st.write(f"*Ticket Generated:* `{triage['audit_report']['ticket_id']}`")
+                    else:
+                        st.error(f"Error: Received status code {response.status_code} from Layer 3.")
+                except Exception as e:
+                    st.error(f"Failed to connect to backend services: {e}")
+
+# -------------------------------------------------------------------
+# לשונית 2: סוכן חכם אינטראקטיבי (LangGraph Copilot)
+# -------------------------------------------------------------------
+with tab2:
+    st.header("💬 Property Operations Copilot")
+    st.subheader("Talk to the intelligent Agent to search historical tickets or log issues manually")
+
+    # אתחול היסטוריית הצ'אט ב-Session State של Streamlit
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # תצוגת היסטוריית השיחה
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    # קבלת הודעה חדשה מהמשתמש
+    if user_message := st.chat_input("Ask me about tickets, active issues, or log a new issue..."):
+        # הצגת הודעת המשתמש במסך
+        with st.chat_message("user"):
+            st.write(user_message)
+
+        # הוספה להיסטוריית ה-Session
+        st.session_state.chat_history.append({"role": "user", "content": user_message})
+
+        with st.spinner("Agent is thinking & running tools..."):
             try:
-                # הכנת הקובץ והנתונים הנוספים (תיאור הליקוי) למשלוח ב-POST API
-                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-
-                # שולחים את תיאור הליקוי כפרמטר (data) יחד עם קובץ התמונה
-                data_payload = {"condition_description": condition_description}
-
-                response = requests.post(IMAGE_ANALYSER_URL, files=files, data=data_payload, timeout=10)
+                # שליחת השאילתה וההיסטוריה לשירות ה-Agent (Layer 5)
+                payload = {
+                    "message": user_message,
+                    "history": st.session_state.chat_history[:-1]
+                }
+                response = requests.post(AGENT_URL, json=payload, timeout=15)
 
                 if response.status_code == 200:
-                    data = response.json()
-                    st.success("Analysis Completed Successfully!")
+                    reply = response.json()["reply"]
 
-                    # חלוקת המסך ל-2 טורים להצגת הנתונים
-                    col1, col2 = st.columns(2)
+                    # הצגת הודעת הסוכן במסך
+                    with st.chat_message("assistant"):
+                        st.write(reply)
 
-                    with col1:
-                        st.subheader("📸 Image Analysis (Layer 3)")
-                        st.json(data.get("image_analysis", {}))
-
-                    with col2:
-                        st.subheader("⚖️ Compliance & Triage (Layer 4)")
-                        triage = data.get("triage_decision", {})
-
-                        if "error" in triage:
-                            st.error(f"Layer 4 Error: {triage['error']}")
-                        else:
-                            priority = triage.get("priority", "Medium")
-
-                            # עיצוב צבעוני דינמי לפי רמת הדחיפות
-                            if priority == "Emergency":
-                                st.error(f"🚨 PRIORITY: {priority}")
-                            elif priority == "High":
-                                st.warning(f"⚠️ PRIORITY: {priority}")
-                            else:
-                                st.info(f"ℹ️ PRIORITY: {priority}")
-
-                            st.write(f"**Category:** {triage.get('category')}")
-                            st.write(f"**Summary:** {triage.get('summary')}")
-
-                            # הצגת דוח ה-Audit המלא בצורה בטוחה ומפוצלת
-                            report = triage.get("audit_report", {})
-                            st.markdown("### 📄 Audit Ticket Details")
-
-                            ticket_id = report.get('ticket_id', 'N/A')
-                            timestamp = report.get('timestamp', 'N/A')
-                            reg_code = report.get('regulation_code', 'N/A')
-                            status = report.get('compliance_status', 'N/A')
-                            sla = report.get('sla_deadline', 'N/A')
-                            action = report.get('required_action', 'N/A')
-
-                            st.markdown(f"- **Ticket ID:** `{ticket_id}`")
-                            st.markdown(f"- **Timestamp:** {timestamp}")
-                            st.markdown(f"- **Regulation Code:** `{reg_code}`")
-                            st.markdown(f"- **Compliance Status:** {status}")
-                            st.markdown(f"- **SLA Deadline:** **{sla}**")
-                            st.markdown(f"- **Action Required:** *{action}*")
-
-                # טיפול במצב שבו ה-Guardrail מחזיר שגיאה מהשרת (כמו שגיאה 400 קלט לא תקין)
-                elif response.status_code == 400:
-                    error_detail = response.json().get("detail", "Blocked by Guardrail")
-                    st.error(f"🛡️ Guardrail Alert: {error_detail}")
+                    st.session_state.chat_history.append({"role": "assistant", "content": reply})
                 else:
-                    st.error(f"Server returned status code {response.status_code}")
-
-            except requests.exceptions.RequestException as e:
-                st.error(f"Could not connect to the backend services: {e}")
+                    st.error(f"Agent service error: Status code {response.status_code}")
+            except Exception as e:
+                st.error(f"Failed to connect to LangGraph Agent: {e}")
 
 # -------------------------------------------------------------------
 # אזור ה-Dashboard: הצגת היסטוריית דיווחים מטבלת PostgreSQL
@@ -106,8 +116,6 @@ if uploaded_file is not None:
 st.markdown("---")
 st.header("📋 Audit History Dashboard")
 st.subheader("All historical property compliance reports saved in PostgreSQL")
-
-HISTORY_URL = "http://property_triage:8003/history"
 
 try:
     response = requests.get(HISTORY_URL, timeout=5)
@@ -118,19 +126,14 @@ try:
             import pandas as pd
 
             df = pd.DataFrame(history_data)
-
-            # שינוי שמות העמודות לתצוגה יפה
             df.columns = [
                 "Ticket ID", "Timestamp", "Room Type", "Category",
                 "Priority", "Regulation Code", "Compliance Status", "SLA Deadline"
             ]
-
             st.dataframe(df, use_container_width=True)
         else:
             st.info("No reports found in the database yet. Run your first analysis above!")
     else:
-        # תיקון: שימוש נכון ב-st.error בלי פרמטרים שגויים
         st.error(f"Could not load history from Layer 4. Status code: {response.status_code}")
 except Exception as e:
-    # הודעה ידידותית בזמן שהדוקר מסתנכרן ברקע
     st.info("🔄 Dashboard is loading... Waiting for background services to sync.")

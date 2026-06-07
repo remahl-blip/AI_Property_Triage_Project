@@ -6,6 +6,8 @@ import requests
 import streamlit as st
 
 import apartment_chat
+import listings_search as ls
+from listings_search import DEAL_LABELS, TYPE_LABELS
 
 st.set_page_config(
     page_title="Property Triage - Layers 3 & 4",
@@ -110,51 +112,37 @@ with search_tab:
     if not listings:
         st.warning("אין נתוני דירות זמינים (listings.json ריק או חסר).")
     else:
-        df = pd.DataFrame(listings)
-
-        DEAL_LABELS = {"sale": "מכירה", "rent": "השכרה"}
-        TYPE_LABELS = {
-            "apartment": "דירה",
-            "villa": "וילה",
-            "penthouse": "פנטהאוז",
-            "studio": "סטודיו",
-            "duplex": "דופלקס",
-            "cottage": "קוטג'",
-        }
-
         with st.sidebar:
             st.subheader("🔎 סינון דירות")
 
             query = st.text_input("חיפוש חופשי", placeholder="עיר, שכונה, מאפיין...")
 
-            cities = sorted(df["city"].dropna().unique().tolist())
+            cities = sorted({item["city"] for item in listings if item.get("city")})
             selected_cities = st.multiselect("עיר", cities)
 
-            deals = sorted(df["deal"].dropna().unique().tolist())
+            deals = sorted({item["deal"] for item in listings if item.get("deal")})
             selected_deals = st.multiselect(
                 "סוג עסקה",
                 deals,
                 format_func=lambda d: DEAL_LABELS.get(d, d),
             )
 
-            types = sorted(df["property_type"].dropna().unique().tolist())
+            types = sorted({item["property_type"] for item in listings if item.get("property_type")})
             selected_types = st.multiselect(
                 "סוג נכס",
                 types,
                 format_func=lambda t: TYPE_LABELS.get(t, t),
             )
 
-            room_min = int(df["rooms"].min())
-            room_max = int(df["rooms"].max())
+            all_rooms = [int(item["rooms"]) for item in listings if item.get("rooms") is not None]
+            room_min, room_max = min(all_rooms), max(all_rooms)
             if room_min < room_max:
-                rooms_range = st.slider(
-                    "חדרים", room_min, room_max, (room_min, room_max)
-                )
+                rooms_range = st.slider("חדרים", room_min, room_max, (room_min, room_max))
             else:
                 rooms_range = (room_min, room_max)
 
-            price_min = int(df["price"].min())
-            price_max = int(df["price"].max())
+            all_prices = [int(item["price"]) for item in listings if item.get("price") is not None]
+            price_min, price_max = min(all_prices), max(all_prices)
             if price_min < price_max:
                 price_range = st.slider(
                     "מחיר (₪)", price_min, price_max, (price_min, price_max), step=10000
@@ -162,41 +150,22 @@ with search_tab:
             else:
                 price_range = (price_min, price_max)
 
-        mask = pd.Series(True, index=df.index)
+        results = ls.filter_listings(
+            listings,
+            cities=selected_cities,
+            deals=selected_deals,
+            property_types=selected_types,
+            rooms_range=rooms_range,
+            price_range=price_range,
+            query=query,
+        )
 
-        if selected_cities:
-            mask &= df["city"].isin(selected_cities)
-        if selected_deals:
-            mask &= df["deal"].isin(selected_deals)
-        if selected_types:
-            mask &= df["property_type"].isin(selected_types)
+        st.caption(f"נמצאו {len(results)} דירות מתוך {len(listings)}")
 
-        mask &= df["rooms"].between(rooms_range[0], rooms_range[1])
-        mask &= df["price"].between(price_range[0], price_range[1])
-
-        if query:
-            q = query.strip()
-
-            def matches(row):
-                haystack = " ".join([
-                    str(row.get("title", "")),
-                    str(row.get("city", "")),
-                    str(row.get("neighborhood", "")),
-                    str(row.get("description", "")),
-                    " ".join(row.get("features", []) or []),
-                ])
-                return q in haystack
-
-            mask &= df.apply(matches, axis=1)
-
-        results = df[mask]
-
-        st.caption(f"נמצאו {len(results)} דירות מתוך {len(df)}")
-
-        if results.empty:
+        if not results:
             st.info("לא נמצאו דירות התואמות את הסינון.")
         else:
-            for _, row in results.iterrows():
+            for row in results:
                 deal_label = DEAL_LABELS.get(row["deal"], row["deal"])
                 type_label = TYPE_LABELS.get(row["property_type"], row["property_type"])
                 with st.container(border=True):
@@ -218,7 +187,7 @@ with search_tab:
 
             st.markdown("---")
             st.subheader("📊 טבלת תוצאות")
-            table = results.copy()
+            table = pd.DataFrame(results)
             table["deal"] = table["deal"].map(lambda d: DEAL_LABELS.get(d, d))
             table["property_type"] = table["property_type"].map(
                 lambda t: TYPE_LABELS.get(t, t)

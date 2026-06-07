@@ -50,9 +50,62 @@ services:
     networks:
       - triage_network
 
+  n8n:
+    image: n8nio/n8n:1.76.1
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_SECURE_COOKIE=false
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./code_Layer1_2_WebUI_n8n/orchestration/workflows:/import:ro
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ ! -f /home/node/.n8n/.property_triage_workflow_imported ] && [ -f /import/property_triage_workflow.json ]; then
+          echo "Importing n8n workflow"
+          n8n import:workflow --input=/import/property_triage_workflow.json && touch /home/node/.n8n/.property_triage_workflow_imported
+        fi
+        WF_ID=$$(n8n list:workflow 2>/dev/null | grep "Property Triage Orchestration" | cut -d'|' -f1)
+        if [ -n "$$WF_ID" ]; then
+          echo "Activating workflow $$WF_ID"
+          n8n update:workflow --id="$$WF_ID" --active=true
+        fi
+        exec n8n start
+    depends_on:
+      - image_analyser
+      - property_triage
+    networks:
+      - triage_network
+
+  layer1_webui:
+    build: ./code_Layer1_2_WebUI_n8n
+    ports:
+      - "8502:8501"
+    environment:
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/property-triage
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - REQUEST_TIMEOUT_SECONDS=60
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - n8n
+      - image_analyser
+      - property_triage
+    networks:
+      - triage_network
+
 networks:
   triage_network:
     driver: bridge
 
 volumes:
   postgres_data:
+  n8n_data:

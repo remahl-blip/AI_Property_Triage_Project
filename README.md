@@ -1,12 +1,14 @@
-# AI Property Triage Project (Layers 3 + 4)
+# AI Property Triage Project
 
-A minimal, **working** Docker stack for property maintenance triage:
+Docker stack for property maintenance triage with optional Layers 1–2 orchestration.
 
 | Layer | Service | Port | Role |
 |-------|---------|------|------|
+| **1** | Partner WebUI | 8502 | Listing form → n8n webhook |
+| **2** | n8n | 5678 | Orchestrates Layer 3 + 4 calls |
 | **3** | Image Analyser | 8002 | Reads image filename + description, builds structured metadata |
 | **4** | Property Triage | 8003 | Rule engine, SLA routing, PostgreSQL audit log |
-| UI | Streamlit | 8501 | Upload form + history dashboard |
+| UI | Streamlit (Layers 3+4) | 8501 | Upload form + history dashboard |
 
 No Gemini, Vertex AI, or API keys required.
 
@@ -18,9 +20,13 @@ docker compose up --build
 
 Then open:
 
-- UI: http://localhost:8501
+- Partner WebUI (Layer 1): http://localhost:8502
+- n8n: http://localhost:5678
+- Layers 3+4 UI: http://localhost:8501
 - Layer 3 docs: http://localhost:8002/docs
 - Layer 4 docs: http://localhost:8003/docs
+
+See `code_Layer1_2_WebUI_n8n/README.md` for n8n workflow import and webhook troubleshooting.
 
 ## Test Layer 3 → Layer 4
 
@@ -45,9 +51,10 @@ curl -X POST http://localhost:8003/triage \
 ## Project structure
 
 ```text
+code_Layer1_2_WebUI_n8n/ # Layers 1 + 2 (WebUI + n8n)
 code_Image_Analyser/     # Layer 3
 code_Property_Triage/    # Layer 4
-code_Frontend_UI/        # Streamlit UI
+code_Frontend_UI/        # Streamlit UI (Layers 3+4 direct)
 docker-compose.yml
 ```
 

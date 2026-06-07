@@ -1,83 +1,116 @@
 # AI-Powered Property Triage - WebUI and n8n Orchestration
 
-This repository currently implements only the assigned project responsibilities:
+Layers 1 and 2 for the course project:
 
-- Layer 1: Streamlit WebUI
-- Layer 2: n8n orchestration integration
+- **Layer 1:** Streamlit WebUI (`frontend/app.py`)
+- **Layer 2:** n8n orchestration (`orchestration/workflows/property_triage_workflow.json`)
 
-The EC2 microservices and external LLM services are intentionally not implemented here. Their future integration points are represented as TODO-marked placeholders in the n8n payload.
+This folder is wired to the existing Layer 3/4 services in the repo root:
 
-## Project Structure
+| Service | Docker hostname | Endpoint |
+|---------|-----------------|----------|
+| Image Analyser | `image_analyser` | `POST /analyse` (multipart: `file`, `condition_description`) |
+| Property Triage | `property_triage` | `POST /triage`, `GET /history` |
+
+RAG, Guardrails, and LangGraph remain placeholders in the payload metadata.
+
+## Project structure
 
 ```text
-CV_Project/
-|-- ARCHITECTURE.md
+code_Layer1_2_WebUI_n8n/
+|-- Dockerfile
 |-- README.md
 |-- requirements.txt
 |-- .env.example
 |-- config/
-|   |-- __init__.py
 |   `-- settings.py
 |-- frontend/
-|   |-- __init__.py
 |   `-- app.py
 `-- orchestration/
-    |-- __init__.py
-    `-- n8n_client.py
+    |-- n8n_client.py
+    |-- n8n_import.sh
+    `-- workflows/
+        `-- property_triage_workflow.json
 ```
 
-## Setup
+## Run with the full Docker stack (recommended)
 
-Create a virtual environment and install dependencies:
+From the repo root:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+docker compose up --build
 ```
 
-Create your local environment file:
+Services:
+
+| UI / tool | URL |
+|-----------|-----|
+| Layer 1 WebUI (partner) | http://localhost:8502 |
+| Layer 3+4 Streamlit UI | http://localhost:8501 |
+| n8n editor | http://localhost:5678 |
+| Image Analyser docs | http://localhost:8002/docs |
+| Property Triage docs | http://localhost:8003/docs |
+
+The `layer1_webui` container posts to `http://n8n:5678/webhook/property-triage`.
+The n8n workflow calls `http://image_analyser:8002/analyse` and/or `http://property_triage:8003/triage`.
+
+### First-time n8n workflow check
+
+On first startup, compose imports `property_triage_workflow.json` and activates **Property Triage Orchestration** before n8n starts.
+
+If the webhook returns 404:
+
+1. Open http://localhost:5678
+2. Confirm **Property Triage Orchestration** exists and is **Active**
+3. If missing, import manually: **Workflows → Import from file** → `orchestration/workflows/property_triage_workflow.json`, then toggle **Active**
+4. If import failed on an older volume, reset n8n data: `docker compose down` then `docker volume rm ai_property_triage_project_n8n_data`, then `docker compose up --build`
+
+## Run locally (host Streamlit + Docker backend)
+
+Start backend services only:
 
 ```bash
+docker compose up --build postgres_db property_triage image_analyser n8n
+```
+
+Create env file and run Streamlit on the host:
+
+```bash
+cd code_Layer1_2_WebUI_n8n
 cp .env.example .env
-```
-
-Update `.env` with your n8n webhook URL:
-
-```bash
-N8N_WEBHOOK_URL=http://localhost:5678/webhook/property-triage
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
-REQUEST_TIMEOUT_SECONDS=30
-```
-
-## Run
-
-Start Ollama separately if you want to use the assistant:
-
-```bash
-ollama pull llama3
-ollama serve
-```
-
-Run the Streamlit app:
-
-```bash
+pip install -r requirements.txt
 streamlit run frontend/app.py
 ```
 
-## What to Test First
+Use `N8N_WEBHOOK_URL=http://localhost:5678/webhook/property-triage` in `.env`.
 
-1. Open the app and confirm both tabs render.
-2. In the Assistant tab, ask a real estate listing question and confirm Ollama responds.
-3. In the Submit Listing tab, enter an agent name, listing description, and one image.
-4. Submit with no n8n server running and confirm the app shows a clean connection error.
-5. Point `N8N_WEBHOOK_URL` to a test webhook and confirm the JSON payload arrives.
+## Direct curl tests (bypass WebUI)
 
-## Integration TODOs
+**Layer 4:**
 
-- TODO: Connect n8n to the teammate Guardrails service for input and output checks.
-- TODO: Connect n8n to the teammate RAG service for similar listing retrieval.
-- TODO: Connect n8n to the teammate Image Analyzer service once its final image contract is available.
-- TODO: Connect n8n to the teammate LangGraph Agent for multi-step listing questions.
-- TODO: Replace placeholder payload fields with final schemas after the team locks service contracts.
+```bash
+curl -X POST http://localhost:8003/triage \
+  -H "Content-Type: application/json" \
+  -d "{\"room_type\":\"kitchen\",\"condition_description\":\"severe water leak near the sink\"}"
+```
+
+**Layer 3 → 4:**
+
+```bash
+curl -X POST http://localhost:8002/analyse \
+  -F "file=@kitchen_leak.jpg" \
+  -F "condition_description=severe water leak near the sink"
+```
+
+**n8n webhook (text-only listing, no image):**
+
+```bash
+curl -X POST http://localhost:5678/webhook/property-triage \
+  -H "Content-Type: application/json" \
+  -d "{\"source\":\"curl-test\",\"listing\":{\"description\":\"severe water leak in kitchen\",\"agent_name\":\"Test Agent\",\"images\":[],\"image_urls\":[]}}"
+```
+
+## Integration status
+
+- Connected: Image Analyser, Property Triage (via n8n Code node)
+- Pending: RAG, Guardrails, LangGraph (not required for Layers 3+4 demo)

@@ -52,24 +52,25 @@ def build_property_submission_payload(
             "images": encoded_images,
             "image_urls": [],
         },
-        "future_service_context": {
-            # TODO: Teammate integration - populate with RAG service URL/result metadata.
+        "service_routing": {
+            "image_analyser": {
+                "status": "connected",
+                "endpoint": "http://image_analyser:8002/analyse",
+            },
+            "property_triage": {
+                "status": "connected",
+                "endpoint": "http://property_triage:8003/triage",
+                "history_endpoint": "http://property_triage:8003/history",
+            },
             "rag_service": {
                 "status": "pending_integration",
                 "endpoint": "POST /query",
             },
-            # TODO: Teammate integration - replace uploaded-image payload handling with the final Image Analyzer contract.
-            "image_analyzer": {
-                "status": "pending_integration",
-                "endpoint": "POST /analyse",
-            },
-            # TODO: Teammate integration - align with final input/output rail schemas.
             "guardrails": {
                 "status": "pending_integration",
                 "input_endpoint": "POST /check/input",
                 "output_endpoint": "POST /check/output",
             },
-            # TODO: Teammate integration - add LangGraph request context once agent queries are finalized.
             "langgraph_agent": {
                 "status": "pending_integration",
                 "endpoint": "POST /agent/run",

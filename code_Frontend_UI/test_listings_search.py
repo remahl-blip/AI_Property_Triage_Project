@@ -133,6 +133,21 @@ class FilterListingsTests(unittest.TestCase):
     def test_no_match_returns_empty(self):
         self.assertEqual(ls.filter_listings(SAMPLE, cities=["אילת"]), [])
 
+    def test_filter_by_neighborhoods(self):
+        self.assertEqual(_ids(ls.filter_listings(SAMPLE, neighborhoods=["כרמל"])), ["A1"])
+
+    def test_filter_by_min_price(self):
+        self.assertEqual(
+            _ids(ls.filter_listings(SAMPLE, min_price=1000000)),
+            ["A1", "A2"],
+        )
+
+    def test_min_rooms_via_infinite_upper_bound(self):
+        self.assertEqual(
+            _ids(ls.filter_listings(SAMPLE, rooms_range=(4, float("inf")))),
+            ["A2", "A3"],
+        )
+
 
 class ParseQueryTests(unittest.TestCase):
     def test_detects_rent(self):
@@ -169,6 +184,25 @@ class ParseQueryTests(unittest.TestCase):
         self.assertEqual(criteria.get("rooms"), 3)
         self.assertIn("מרפסת", criteria.get("features", []))
 
+    def test_detects_min_rooms_plus_syntax(self):
+        criteria = ls.parse_query("דירת 3+ חדרים", SAMPLE)
+        self.assertEqual(criteria.get("rooms_min"), 3)
+        self.assertNotIn("rooms", criteria)
+
+    def test_detects_min_rooms_words(self):
+        self.assertEqual(ls.parse_query("לפחות 4 חדרים", SAMPLE).get("rooms_min"), 4)
+
+    def test_detects_price_range(self):
+        criteria = ls.parse_query("דירה בין 1,000,000 ל-2,000,000", SAMPLE)
+        self.assertEqual(criteria.get("min_price"), 1000000)
+        self.assertEqual(criteria.get("max_price"), 2000000)
+
+    def test_detects_min_price(self):
+        self.assertEqual(ls.parse_query("מעל 5000", SAMPLE).get("min_price"), 5000)
+
+    def test_detects_neighborhood(self):
+        self.assertEqual(ls.parse_query("דירה ברוטשילד", SAMPLE).get("neighborhood"), "רוטשילד")
+
 
 class FilterByCriteriaTests(unittest.TestCase):
     def test_parsed_criteria_filters_correctly(self):
@@ -182,6 +216,18 @@ class FilterByCriteriaTests(unittest.TestCase):
     def test_no_results_for_impossible_combo(self):
         criteria = ls.parse_query("וילה להשכרה", SAMPLE)
         self.assertEqual(ls.filter_by_criteria(SAMPLE, criteria), [])
+
+    def test_min_rooms_is_inclusive_lower_bound(self):
+        criteria = ls.parse_query("לפחות 4 חדרים", SAMPLE)
+        self.assertEqual(_ids(ls.filter_by_criteria(SAMPLE, criteria)), ["A2", "A3"])
+
+    def test_price_range_criteria(self):
+        criteria = ls.parse_query("בין 1,000,000 ל-2,000,000", SAMPLE)
+        self.assertEqual(_ids(ls.filter_by_criteria(SAMPLE, criteria)), ["A1"])
+
+    def test_neighborhood_criteria(self):
+        criteria = ls.parse_query("דירה ברוטשילד", SAMPLE)
+        self.assertEqual(_ids(ls.filter_by_criteria(SAMPLE, criteria)), ["A3"])
 
 
 class DescribeCriteriaTests(unittest.TestCase):
@@ -197,6 +243,16 @@ class DescribeCriteriaTests(unittest.TestCase):
         self.assertIn("3 חדרים", text)
         self.assertIn("2,000,000", text)
         self.assertIn("מרפסת", text)
+
+    def test_describes_new_keys(self):
+        text = ls.describe_criteria({
+            "neighborhood": "כרמל", "rooms_min": 3,
+            "min_price": 1000000, "max_price": 2000000,
+        })
+        self.assertIn("שכונה: כרמל", text)
+        self.assertIn("3+ חדרים", text)
+        self.assertIn("1,000,000", text)
+        self.assertIn("2,000,000", text)
 
     def test_empty_criteria_is_empty_string(self):
         self.assertEqual(ls.describe_criteria({}), "")

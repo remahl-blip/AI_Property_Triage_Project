@@ -12,7 +12,7 @@ Docker stack aligned with the course guideline architecture (Layers 1–4). Offl
 | **3b** | Guardrails Service (`guardrails_service`) | 8005 | `POST /check/input`, `POST /check/output` |
 | **3c** | LangGraph Agent (`langgraph_agent`) | 8004 | `POST /agent/run` — planner + tool calls |
 | **3d** | Image Analyser (`image_analyser`) | 8002 | `POST /analyse` — pixel + metadata analysis |
-| **4** | LLM APIs (optional) | — | Gemini / Vertex via env vars, or Ollama on host |
+| **4** | LLM Service (`llm_service`) | 8006 | Ollama-backed extract / agent / report (replaces Gemini/GPT n8n nodes) |
 | **Support** | Property Triage (`property_triage`) | 8003 | Maintenance SLA routing + PostgreSQL audit (not Layer 4) |
 | **UI** | Streamlit (`frontend_ui`) | 8501 | Direct upload + history dashboard |
 
@@ -33,6 +33,7 @@ Then open:
 - Image Analyser docs: http://localhost:8002/docs
 - LangGraph Agent docs: http://localhost:8004/docs
 - Guardrails docs: http://localhost:8005/docs
+- LLM Service docs: http://localhost:8006/docs
 - Property Triage docs: http://localhost:8003/docs
 
 Optional: run [Ollama](https://ollama.com) on the host for RAG insights and chat (`OLLAMA_URL` defaults to `http://host.docker.internal:11434`).
@@ -41,15 +42,20 @@ See `INTEGRATION.md` for curl test checklist and `code_Layer1_2_WebUI_n8n/README
 
 ## n8n pipeline (Layer 2)
 
-`property_triage_workflow.json` runs:
+`property_triage_workflow.json` implements the full guideline flow:
 
-1. Webhook receives listing payload
-2. Guardrails input check
-3. Parallel RAG `/query` + LangGraph `/agent/run`
-4. Image Analyser `/analyse` (multipart or metadata-only)
-5. Guardrails output check on combined answer
-6. Route `residential` vs `commercial` from listing / RAG top hit
-7. Property Triage for maintenance SLA when applicable
+1. **Webhook** — form POST from WebUI
+2. **Guardrails input** — `POST /check/input`
+3. **IF pass** — reject or continue
+4. **Info Extractor** — `llm_service:8006/extract` (Ollama)
+5. **RAG Query** — `rag_service:8001/query` (LangChain + ChromaDB)
+6. **LangGraph Agent** — `langgraph_agent:8004/agent/run`
+7. **Image Analyser** — Code node → `image_analyser:8002/analyse`
+8. **AI Agent Enrich** — `llm_service:8006/agent`
+9. **LLM Chain Report** — `llm_service:8006/report`
+10. **Guardrails output** — `POST /check/output`
+11. **Router** — residential vs commercial
+12. **Success Response** — JSON with `report_markdown`
 
 ## Project structure
 
@@ -59,9 +65,12 @@ code_RAG_Service/         # Layer 3 — RAG
 code_Guardrails_Service/  # Layer 3 — Guardrails
 code_LangGraph_Agent/     # Layer 3 — Agent
 code_Image_Analyser/      # Layer 3 — Image analysis
+code_LLM_Service/         # Layer 4 — Ollama extract/agent/report for n8n
 code_Property_Triage/     # Support — maintenance triage + DB
 code_Frontend_UI/         # Streamlit UI
 docker-compose.yml
+docs/                     # Prompt logs, DEPLOYMENT.md, SUBMISSION.md
+demo/                     # Demo video guide
 INTEGRATION.md
 tests/
 ```
@@ -69,6 +78,6 @@ tests/
 ## Local tests
 
 ```bash
-docker compose run --rm --no-deps -v "%cd%:/workspace" rag_service sh -c "pip install -q Pillow && cd /workspace && PYTHONPATH=code_Guardrails_Service:code_RAG_Service:code_Image_Analyser python -m unittest tests.test_layer3_services -v"
+docker compose run --rm --no-deps -v "%cd%:/workspace" guardrails_service sh -c "pip install -q Pillow && cd /workspace && PYTHONPATH=code_Guardrails_Service:code_Image_Analyser python -m unittest tests.test_layer3_services -v"
 python code_RAG_Service/populate_index.py
 ```

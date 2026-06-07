@@ -167,15 +167,41 @@ def render_submission_form(settings) -> None:
             st.error(str(exc))
             return
 
-    st.success(result["message"])
-    st.subheader("Final Response from n8n")
+    data = result["data"]
+    if isinstance(data, dict) and data.get("status") == "rejected":
+        st.error(f"Rejected at {data.get('stage')}: {data.get('reason', data)}")
+        st.json(data)
+        return
 
-    if isinstance(result["data"], (dict, list)):
-        st.json(result["data"])
-    elif result["data"] is None:
+    st.success(result["message"])
+    st.subheader("Listing Brief")
+
+    if isinstance(data, dict):
+        if data.get("report_markdown"):
+            st.markdown(data["report_markdown"])
+        if data.get("rag_result", {}).get("similar_listings"):
+            st.subheader("Similar Listings")
+            for item in data["rag_result"]["similar_listings"][:3]:
+                st.write(
+                    f"**{item.get('title')}** (`{item.get('id')}`) — "
+                    f"{item.get('city')} · ₪{item.get('price', 0):,}"
+                )
+        if data.get("image_results"):
+            st.subheader("Image Analysis")
+            for img in data["image_results"]:
+                analysis = img.get("analysis", {})
+                st.write(
+                    f"`{img.get('filename')}`: room={analysis.get('room_type')}, "
+                    f"score={analysis.get('condition_score')}/5, "
+                    f"confidence={analysis.get('confidence')}"
+                )
+        st.caption(f"Route: **{data.get('route', 'n/a')}** · Pipeline: {data.get('pipeline')}")
+        with st.expander("Full JSON response"):
+            st.json(data)
+    elif data is None:
         st.info("No response body returned.")
     else:
-        st.markdown(str(result["data"]))
+        st.markdown(str(data))
 
 
 def main() -> None:

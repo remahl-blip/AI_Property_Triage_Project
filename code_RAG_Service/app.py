@@ -4,15 +4,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from rag_engine import ListingIndex, generate_insight
+from rag_engine import get_index, generate_insight
 
-index = ListingIndex()
+index = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    index.load()
-    print(f"RAG index ready with {len(index.listings)} listings.")
+    global index
+    index = get_index()
+    print(f"RAG ChromaDB ready with {len(index.listings)} listings.")
     yield
 
 
@@ -37,11 +38,13 @@ def query_listings(request: QueryRequest):
 
 @app.get("/health")
 def health():
+    count = len(index.listings) if index else 0
     return {
         "status": "ok",
         "layer": 3,
         "service": "rag",
-        "listings_indexed": len(index.listings),
+        "stack": "LangChain + ChromaDB + HuggingFace embeddings",
+        "listings_indexed": count,
         "ollama_url": os.getenv("OLLAMA_URL", "http://host.docker.internal:11434"),
     }
 

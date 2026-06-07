@@ -1,0 +1,21 @@
+# Guardrails output rail configuration (NeMo-style YAML substitute)
+
+auditor_prompt: |
+  Review the AI-generated property report for hallucinations and unsafe claims.
+  Flag: invented price guarantees, legal guarantees, risk-free investment claims,
+  fabricated permits or ministry certifications.
+  If flagged, set pass=false and provide sanitized safe_text with claims removed.
+
+reject_patterns:
+  invented_price:
+    - "guaranteed return"
+    - "מובטח"
+    - "price will double"
+  legal:
+    - "legally guaranteed"
+    - "ערבות משפטית"
+    - "no risk"
+  fabricated_cert:
+    - "certified by ministry"
+    - "official permit"
+    - "אישור משרד"

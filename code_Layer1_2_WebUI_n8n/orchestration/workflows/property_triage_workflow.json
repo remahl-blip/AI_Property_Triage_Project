@@ -3,74 +3,133 @@
     "name": "Property Triage Orchestration",
     "nodes": [
       {
-        "parameters": {
-          "httpMethod": "POST",
-          "path": "property-triage",
-          "responseMode": "responseNode",
-          "options": {}
-        },
-        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        "name": "Webhook",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 2,
-        "position": [240, 300],
-        "webhookId": "property-triage-webhook"
+        "parameters": {"httpMethod": "POST", "path": "property-triage", "responseMode": "responseNode", "options": {}},
+        "id": "n1-webhook", "name": "Webhook", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
+        "position": [200, 400], "webhookId": "property-triage-webhook"
       },
       {
         "parameters": {
-          "jsCode": "const payload = $input.first().json.body ?? $input.first().json;\nconst listing = payload.listing ?? {};\nconst description = (listing.description ?? payload.description ?? '').trim();\nconst agentName = (listing.agent_name ?? '').trim();\nconst images = listing.images ?? [];\nconst listingPropertyType = (listing.property_type ?? 'residential').toLowerCase();\n\nif (!description) {\n  throw new Error('listing.description is required');\n}\n\nconst guardrailsInUrl = 'http://guardrails_service:8005/check/input';\nconst guardrailsOutUrl = 'http://guardrails_service:8005/check/output';\nconst ragUrl = 'http://rag_service:8001/query';\nconst imageAnalyserUrl = 'http://image_analyser:8002/analyse';\nconst agentUrl = 'http://langgraph_agent:8004/agent/run';\nconst triageUrl = 'http://property_triage:8003/triage';\n\nconst inputGuard = await this.helpers.httpRequest({\n  method: 'POST',\n  url: guardrailsInUrl,\n  body: { text: description },\n  json: true,\n});\n\nif (!inputGuard.pass) {\n  return [{\n    json: {\n      status: 'blocked',\n      stage: 'input_guardrails',\n      source: payload.source ?? 'streamlit-webui',\n      agent_name: agentName,\n      listing_description: description,\n      guardrails: inputGuard,\n    },\n  }];\n}\n\nconst safeDescription = inputGuard.safe_text || description;\n\nconst [ragResult, agentResult] = await Promise.all([\n  this.helpers.httpRequest({\n    method: 'POST',\n    url: ragUrl,\n    body: { description: safeDescription },\n    json: true,\n  }),\n  this.helpers.httpRequest({\n    method: 'POST',\n    url: agentUrl,\n    body: { query: safeDescription },\n    json: true,\n  }),\n]);\n\nconst imageResults = [];\n\nif (images.length === 0) {\n  const metaAnalysis = await this.helpers.httpRequest({\n    method: 'POST',\n    url: imageAnalyserUrl,\n    body: {\n      condition_description: safeDescription,\n      filename: 'listing.jpg',\n    },\n    json: true,\n  });\n  imageResults.push({ filename: 'listing.jpg', analysis: metaAnalysis });\n} else {\n  for (const image of images) {\n    const base64Data = image.data_base64 ?? '';\n    if (!base64Data) {\n      continue;\n    }\n    const buffer = Buffer.from(base64Data, 'base64');\n    const filename = image.filename || 'upload.jpg';\n    const contentType = image.content_type || 'image/jpeg';\n    const analysisResponse = await this.helpers.httpRequest({\n      method: 'POST',\n      url: imageAnalyserUrl,\n      formData: {\n        file: {\n          value: buffer,\n          options: { filename, contentType },\n        },\n        condition_description: safeDescription,\n      },\n      json: true,\n    });\n    imageResults.push({\n      filename,\n      content_type: contentType,\n      analysis: analysisResponse,\n    });\n  }\n}\n\nconst combinedAnswer = [\n  agentResult.answer ?? '',\n  ragResult.insight ?? '',\n].filter(Boolean).join(' ');\n\nconst outputGuard = await this.helpers.httpRequest({\n  method: 'POST',\n  url: guardrailsOutUrl,\n  body: { text: combinedAnswer },\n  json: true,\n});\n\nlet route = listingPropertyType.includes('commercial') ? 'commercial' : 'residential';\nconst topListing = (ragResult.similar_listings ?? [])[0];\nif (topListing?.property_type === 'commercial') {\n  route = 'commercial';\n} else if (topListing?.property_type === 'residential') {\n  route = 'residential';\n}\n\nlet triageDecision = null;\nif (imageResults.length > 0 && imageResults[0].analysis?.triage_decision) {\n  triageDecision = imageResults[0].analysis.triage_decision;\n} else {\n  triageDecision = await this.helpers.httpRequest({\n    method: 'POST',\n    url: triageUrl,\n    body: {\n      room_type: imageResults[0]?.analysis?.room_type?.replace(' (uncertain)', '') ?? 'unknown',\n      condition_description: safeDescription,\n    },\n    json: true,\n  });\n}\n\nreturn [{\n  json: {\n    status: outputGuard.pass ? 'success' : 'output_flagged',\n    source: payload.source ?? 'streamlit-webui',\n    agent_name: agentName,\n    listing_description: safeDescription,\n    pipeline: 'guardrails_rag_image_langgraph',\n    route,\n    property_type: route,\n    input_guardrails: inputGuard,\n    output_guardrails: outputGuard,\n    rag_result: ragResult,\n    agent_result: agentResult,\n    image_results: imageResults,\n    triage_decision: triageDecision,\n    final_answer: outputGuard.safe_text || combinedAnswer,\n  },\n}];"
+          "method": "POST", "url": "http://guardrails_service:8005/check/input",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ text: ($json.body?.listing?.description ?? $json.listing?.description ?? $json.description ?? '') }) }}",
+          "options": {}
         },
-        "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-        "name": "Orchestrate Layer 3 Services",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [520, 300]
+        "id": "n2-guard-in", "name": "Guardrails Input", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [420, 400]
       },
       {
         "parameters": {
-          "respondWith": "json",
-          "responseBody": "={{ $json }}",
+          "conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"id": "c1", "leftValue": "={{ $json.pass }}", "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+            "combinator": "and"},
           "options": {}
         },
-        "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-        "name": "Respond to Webhook",
-        "type": "n8n-nodes-base.respondToWebhook",
-        "typeVersion": 1.1,
-        "position": [780, 300]
+        "id": "n3-if-pass", "name": "IF Pass", "type": "n8n-nodes-base.if", "typeVersion": 2,
+        "position": [640, 400]
+      },
+      {
+        "parameters": {"respondWith": "json", "responseBody": "={{ JSON.stringify({ status: 'rejected', stage: 'input_guardrails', reason: $json.reason, guardrails: $json }) }}", "options": {}},
+        "id": "n4-reject", "name": "Reject Response", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+        "position": [860, 560]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://llm_service:8006/extract",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ text: $('Guardrails Input').item.json.safe_text }) }}",
+          "options": {}
+        },
+        "id": "n5-extract", "name": "Info Extractor", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [860, 300]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://rag_service:8001/query",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ description: $('Guardrails Input').item.json.safe_text }) }}",
+          "options": {}
+        },
+        "id": "n6-rag", "name": "RAG Query", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [1080, 200]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://langgraph_agent:8004/agent/run",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ query: $('Guardrails Input').item.json.safe_text }) }}",
+          "options": {}
+        },
+        "id": "n7-agent", "name": "LangGraph Agent", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [1080, 400]
+      },
+      {
+        "parameters": {
+          "jsCode": "const webhook = $('Webhook').first().json;\nconst body = webhook.body ?? webhook;\nconst listing = body.listing ?? {};\nconst description = $('Guardrails Input').first().json.safe_text;\nconst images = listing.images ?? [];\nconst imageAnalyserUrl = 'http://image_analyser:8002/analyse';\nconst imageResults = [];\nif (images.length === 0) {\n  const meta = await this.helpers.httpRequest({ method: 'POST', url: imageAnalyserUrl, body: { condition_description: description, filename: 'listing.jpg' }, json: true });\n  imageResults.push({ filename: 'listing.jpg', analysis: meta });\n} else {\n  for (const image of images) {\n    const b64 = image.data_base64 ?? '';\n    if (!b64) continue;\n    const buffer = Buffer.from(b64, 'base64');\n    const analysis = await this.helpers.httpRequest({ method: 'POST', url: imageAnalyserUrl, formData: { file: { value: buffer, options: { filename: image.filename || 'upload.jpg', contentType: image.content_type || 'image/jpeg' } }, condition_description: description }, json: true });\n    imageResults.push({ filename: image.filename, analysis });\n  }\n}\nreturn [{ json: { image_results: imageResults, extracted: $('Info Extractor').first().json, rag: $('RAG Query').first().json, agent: $('LangGraph Agent').first().json, description, agent_name: listing.agent_name ?? '', property_type: listing.property_type ?? 'residential' } }];"
+        },
+        "id": "n8-images", "name": "Image Analyser", "type": "n8n-nodes-base.code", "typeVersion": 2,
+        "position": [1300, 300]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://llm_service:8006/agent",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ extracted_fields: $json.extracted.extracted_fields, rag_result: $json.rag, image_results: $json.image_results, query: $json.description }) }}",
+          "options": {}
+        },
+        "id": "n9-ai-agent", "name": "AI Agent Enrich", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [1520, 300]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://llm_service:8006/report",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ extracted_fields: $('Image Analyser').item.json.extracted.extracted_fields, rag_result: $('Image Analyser').item.json.rag, image_results: $('Image Analyser').item.json.image_results, agent_result: $json.agent_result }) }}",
+          "options": {}
+        },
+        "id": "n10-report", "name": "LLM Chain Report", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [1740, 300]
+      },
+      {
+        "parameters": {
+          "method": "POST", "url": "http://guardrails_service:8005/check/output",
+          "sendBody": true, "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ text: $json.report_markdown ?? '' }) }}",
+          "options": {}
+        },
+        "id": "n11-guard-out", "name": "Guardrails Output", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+        "position": [1960, 300]
+      },
+      {
+        "parameters": {
+          "jsCode": "const ctx = $('Image Analyser').first().json;\nconst report = $('LLM Chain Report').first().json;\nconst outGuard = $input.first().json;\nconst ptype = (ctx.extracted?.extracted_fields?.property_type ?? ctx.property_type ?? 'residential').toLowerCase();\nconst commercial = ['office','retail','industrial','commercial','משרד','חנות'].some(k => ptype.includes(k));\nconst route = commercial ? 'commercial' : 'residential';\nreturn [{ json: { status: outGuard.pass ? 'success' : 'output_flagged', route, property_type: route, agent_name: ctx.agent_name, listing_description: ctx.description, extracted_fields: ctx.extracted?.extracted_fields, rag_result: ctx.rag, agent_result: ctx.agent, image_results: ctx.image_results, ai_agent: $('AI Agent Enrich').first().json, report_markdown: outGuard.safe_text || report.report_markdown, output_guardrails: outGuard, pipeline: 'full_guideline_flow' } }];"
+        },
+        "id": "n12-router", "name": "Router", "type": "n8n-nodes-base.code", "typeVersion": 2,
+        "position": [2180, 300]
+      },
+      {
+        "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+        "id": "n13-success", "name": "Success Response", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
+        "position": [2400, 300]
       }
     ],
     "connections": {
-      "Webhook": {
-        "main": [
-          [
-            {
-              "node": "Orchestrate Layer 3 Services",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Orchestrate Layer 3 Services": {
-        "main": [
-          [
-            {
-              "node": "Respond to Webhook",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      }
+      "Webhook": {"main": [[{"node": "Guardrails Input", "type": "main", "index": 0}]]},
+      "Guardrails Input": {"main": [[{"node": "IF Pass", "type": "main", "index": 0}]]},
+      "IF Pass": {"main": [[{"node": "Info Extractor", "type": "main", "index": 0}], [{"node": "Reject Response", "type": "main", "index": 0}]]},
+      "Info Extractor": {"main": [[{"node": "RAG Query", "type": "main", "index": 0}]]},
+      "RAG Query": {"main": [[{"node": "LangGraph Agent", "type": "main", "index": 0}]]},
+      "LangGraph Agent": {"main": [[{"node": "Image Analyser", "type": "main", "index": 0}]]},
+      "Image Analyser": {"main": [[{"node": "AI Agent Enrich", "type": "main", "index": 0}]]},
+      "AI Agent Enrich": {"main": [[{"node": "LLM Chain Report", "type": "main", "index": 0}]]},
+      "LLM Chain Report": {"main": [[{"node": "Guardrails Output", "type": "main", "index": 0}]]},
+      "Guardrails Output": {"main": [[{"node": "Router", "type": "main", "index": 0}]]},
+      "Router": {"main": [[{"node": "Success Response", "type": "main", "index": 0}]]}
     },
     "active": true,
-    "settings": {
-      "executionOrder": "v1"
-    },
-    "versionId": "property-triage-v2",
-    "meta": {
-      "templateCredsSetupCompleted": true
-    },
+    "settings": {"executionOrder": "v1"},
+    "versionId": "property-triage-v3-full",
+    "meta": {"templateCredsSetupCompleted": true},
     "tags": []
   }
 ]

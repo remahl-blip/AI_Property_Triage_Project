@@ -62,16 +62,23 @@ services:
       - RAG_SERVICE_URL=http://rag_service:8001
       - IMAGE_ANALYSER_URL=http://image_analyser:8002
       - TRIAGE_SERVICE_URL=http://property_triage:8003
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
-      - GEMINI_USE_VERTEX_AI=${GEMINI_USE_VERTEX_AI:-}
-      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
-      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
     depends_on:
       - rag_service
       - image_analyser
       - property_triage
+    networks:
+      - triage_network
+
+  llm_service:
+    build: ./code_LLM_Service
+    ports:
+      - "8006:8006"
+    environment:
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - triage_network
 
@@ -126,6 +133,7 @@ services:
       - rag_service
       - image_analyser
       - langgraph_agent
+      - llm_service
       - property_triage
     networks:
       - triage_network

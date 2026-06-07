@@ -1,20 +1,16 @@
-# 1. נבחר מאיזה תדמית בסיס להתחיל - גרסת פייתון רשמית וקלה
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# 2. נגדיר את תיקיית העבודה בתוך הקונטיינר
 WORKDIR /app
 
-# 3. נעתיק את קובץ הדרישות לתוך הקונטיינר
-COPY requirements.txt .
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# 4. נתקין את הספריות בתוך הקונטיינר (בלי לשמור קבצי זבל)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. נעתיק את שאר הקבצים (כמו app.py) לתוך הקונטיינר
 COPY . .
+RUN python train_model.py
 
-# 6. נצהיר שהקונטיינר חושף את פורט 8002 החוצה
 EXPOSE 8002
-
-# 7. נגדיר את הפקודה שתרוץ אוטומטית כשהקונטיינר יופעל
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8002"]

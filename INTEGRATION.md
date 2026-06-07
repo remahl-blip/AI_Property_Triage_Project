@@ -10,6 +10,7 @@ curl http://localhost:8002/health
 curl http://localhost:8003/health
 curl http://localhost:8004/health
 curl http://localhost:8005/health
+curl http://localhost:8006/health
 ```
 
 ## RAG Service (8001)
@@ -48,6 +49,16 @@ curl -X POST http://localhost:8002/analyse \
 
 Expected: `room_type`, `condition_score` (1–5), `confidence`, optional `triage_decision`.
 
+## LLM Service (8006)
+
+```bash
+curl -X POST http://localhost:8006/extract \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": \"דירת 3 חדרים למכירה בחיפה\"}"
+```
+
+Expected: `extracted_fields` with `property_type`, `source` (`ollama` or `rule-based`).
+
 ## LangGraph Agent (8004)
 
 ```bash
@@ -76,12 +87,12 @@ curl -X POST http://localhost:5678/webhook/property-triage \
   -d "{\"listing\": {\"description\": \"דירת 3 חדרים למכירה בחיפה עם מרפסת\", \"property_type\": \"residential\", \"agent_name\": \"Test\"}}"
 ```
 
-Expected: `status: success`, `rag_result`, `agent_result`, `route: residential`.
+Expected: `status: success`, `report_markdown`, `rag_result`, `image_results`, `route: residential`.
 
 ## Unit tests
 
 ```bash
-docker compose run --rm --no-deps -v "%cd%:/workspace" rag_service sh -c "pip install -q Pillow && cd /workspace && PYTHONPATH=code_Guardrails_Service:code_RAG_Service:code_Image_Analyser python -m unittest tests.test_layer3_services -v"
+docker compose run --rm --no-deps -v "%cd%:/workspace" guardrails_service sh -c "pip install -q Pillow && cd /workspace && PYTHONPATH=code_Guardrails_Service:code_Image_Analyser python -m unittest tests.test_layer3_services -v"
 ```
 
 On Linux/macOS replace `%cd%` with `` `pwd` ``.

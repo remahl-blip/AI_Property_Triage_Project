@@ -149,6 +149,22 @@ def analyse_image_bytes(
     filename: str = "upload.jpg",
     description: str = "",
 ) -> dict:
+    try:
+        from pytorch_inference import predict_room
+
+        pt = predict_room(image_bytes)
+        if pt and not pt.get("uncertain"):
+            issues, keywords, _ = _infer_issues(filename, description)
+            return {
+                **pt,
+                "detected_issues": "; ".join(issues),
+                "keywords": keywords,
+                "analysis_notes": "PyTorch ResNet-18 room classification.",
+                "pixel_features": {},
+            }
+    except Exception:
+        pass
+
     text_room, text_room_conf = _infer_room_from_text(filename, description)
     issues, keywords, issue_conf = _infer_issues(filename, description)
 

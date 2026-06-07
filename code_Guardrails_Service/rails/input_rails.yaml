@@ -1,0 +1,31 @@
+# Guardrails input rail configuration (NeMo-style YAML substitute)
+# Surface #4 — topic detection + policy enforcement prompts
+
+topic_detection_prompt: |
+  Determine if the user text is a genuine real-estate property listing submission.
+  Accept Hebrew or English descriptions mentioning property type, location, rooms, price, or condition.
+  Reject spam, promotional content, offensive language, and clearly off-topic messages
+  (weather, sports, recipes, politics).
+
+policy_enforcement_prompt: |
+  If the text passes topic detection, sanitize links and excessive whitespace.
+  If it fails, return pass=false with a polite reason in English or Hebrew.
+  Minimize false positives — short but valid listing descriptions must pass.
+
+rules:
+  min_length: 8
+  required_hints:
+    - apartment
+    - house
+    - villa
+    - rent
+    - sale
+    - דירה
+    - נכס
+    - מחיר
+    - חדר
+  reject_patterns:
+    - crypto
+    - casino
+    - click here
+    - פרסומת

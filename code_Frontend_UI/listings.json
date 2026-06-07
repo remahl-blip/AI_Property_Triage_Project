@@ -1,0 +1,4 @@
+[
+  {"id": "L001", "title": "דירת 3 חדרים מחודשת בחיפה", "property_type": "apartment", "deal": "sale", "city": "חיפה", "neighborhood": "כרמל", "rooms": 3, "price": 1850000, "size_sqm": 78, "features": ["נוף לים", "מרפסת", "חניה", "מטבח מחודש"], "description": "דירה מוארת עם נוף לים ומטבח חדיש."},
+  {"id": "L002", "title": "וילת יוקרה בהרצליה פיתוח", "property_type": "villa", "deal": "sale", "city": "הרצליה", "neighborhood": "פיתוח", "rooms": 6, "price": 8500000, "size_sqm": 320, "features": ["בריכה", "גינה", "בית חכם", "נוף לים"], "description": "וילה יוקרתית סמוך לחוף עם בריכה פרטית."},
+  {"id": "L003", "title": "דירת 4 חדרים להשכרה בתל אביב", "property_type": "apartment", "deal": "rent", "city": "תל אביב", "neighborhood": "רוטשיל

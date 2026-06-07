@@ -1,31 +1,52 @@
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, Field
 
-app = FastAPI(title="RAG Mock Service")
+from rag_engine import ListingIndex, generate_insight
 
-# הגדרת המבנה של הבקשה (הטקסט של המודעה שה-n8n ישלח)
-class RAGRequest(BaseModel):
-    property_description: str
+index = ListingIndex()
 
-# הגדרת המבנה של נכס דומה בודד
-class SimilarProperty(BaseModel):
-    id: int
-    title: str
-    price: int
-    similarity_score: float
 
-# אנדפוינט לחיפוש נכסים דומים
-@app.post("/search", response_model=List[SimilarProperty])
-def search_similar_properties(request: RAGRequest):
-    # נחזיר נתוני דמי (Mock) של 3 נכסים קבועים כדי לבדוק את התשתית
-    return [
-        {"id": 101, "title": "3-room apartment in Central Haifa", "price": 1500000, "similarity_score": 0.89},
-        {"id": 102, "title": "Cozy studio near University of Haifa", "price": 950000, "similarity_score": 0.82},
-        {"id": 103, "title": "Renovated apartment with sea view", "price": 1800000, "similarity_score": 0.75}
-    ]
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    index.load()
+    print(f"RAG index ready with {len(index.listings)} listings.")
+    yield
+
+
+app = FastAPI(title="RAG Service (Layer 3)", lifespan=lifespan)
+
+
+class QueryRequest(BaseModel):
+    description: str = Field(..., min_length=1)
+
+
+class QueryResponse(BaseModel):
+    similar_listings: list[dict]
+    insight: str
+
+
+@app.post("/query", response_model=QueryResponse)
+def query_listings(request: QueryRequest):
+    similar = index.search(request.description.strip())
+    insight = generate_insight(request.description.strip(), similar)
+    return {"similar_listings": similar, "insight": insight}
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "layer": 3,
+        "service": "rag",
+        "listings_indexed": len(index.listings),
+        "ollama_url": os.getenv("OLLAMA_URL", "http://host.docker.internal:11434"),
+    }
+
 
 if __name__ == "__main__":
     import uvicorn
-    # השירות הזה ירוץ על פורט 8001
+
     uvicorn.run(app, host="0.0.0.0", port=8001)

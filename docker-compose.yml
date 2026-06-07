@@ -23,6 +23,26 @@ services:
     networks:
       - triage_network
 
+  rag_service:
+    build: ./code_RAG_Service
+    ports:
+      - "8001:8001"
+    environment:
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - triage_network
+
+  guardrails_service:
+    build: ./code_Guardrails_Service
+    ports:
+      - "8005:8005"
+    networks:
+      - triage_network
+
   image_analyser:
     build: ./code_Image_Analyser
     ports:
@@ -30,6 +50,27 @@ services:
     environment:
       - TRIAGE_SERVICE_URL=http://property_triage:8003/triage
     depends_on:
+      - property_triage
+    networks:
+      - triage_network
+
+  langgraph_agent:
+    build: ./code_LangGraph_Agent
+    ports:
+      - "8004:8004"
+    environment:
+      - RAG_SERVICE_URL=http://rag_service:8001
+      - IMAGE_ANALYSER_URL=http://image_analyser:8002
+      - TRIAGE_SERVICE_URL=http://property_triage:8003
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_USE_VERTEX_AI=${GEMINI_USE_VERTEX_AI:-}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+    depends_on:
+      - rag_service
+      - image_analyser
       - property_triage
     networks:
       - triage_network
@@ -47,6 +88,8 @@ services:
     depends_on:
       - image_analyser
       - property_triage
+      - rag_service
+      - langgraph_agent
     networks:
       - triage_network
 
@@ -79,7 +122,10 @@ services:
         fi
         exec n8n start
     depends_on:
+      - guardrails_service
+      - rag_service
       - image_analyser
+      - langgraph_agent
       - property_triage
     networks:
       - triage_network
@@ -97,8 +143,6 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - n8n
-      - image_analyser
-      - property_triage
     networks:
       - triage_network
 

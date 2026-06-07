@@ -1,16 +1,22 @@
 # AI Property Triage Project
 
-Docker stack for property maintenance triage with optional Layers 1–2 orchestration.
+Docker stack aligned with the course guideline architecture (Layers 1–4). Offline-first: rule-based engines and optional local Ollama — no cloud API keys required.
 
-| Layer | Service | Port | Role |
-|-------|---------|------|------|
-| **1** | Partner WebUI | 8502 | Listing form → n8n webhook |
-| **2** | n8n | 5678 | Orchestrates Layer 3 + 4 calls |
-| **3** | Image Analyser | 8002 | Reads image filename + description, builds structured metadata |
-| **4** | Property Triage | 8003 | Rule engine, SLA routing, PostgreSQL audit log |
-| UI | Streamlit (Layers 3+4) | 8501 | Upload form + history dashboard |
+## Guideline layer mapping
 
-No Gemini, Vertex AI, or API keys required.
+| Layer | Component | Port | Role |
+|-------|-----------|------|------|
+| **1** | Partner WebUI (`layer1_webui`) | 8502 | Listing form → n8n webhook |
+| **2** | n8n orchestration | 5678 | Webhook → Guardrails → Layer 3 services → Router |
+| **3a** | RAG Service (`rag_service`) | 8001 | `POST /query` — similar listings + insight |
+| **3b** | Guardrails Service (`guardrails_service`) | 8005 | `POST /check/input`, `POST /check/output` |
+| **3c** | LangGraph Agent (`langgraph_agent`) | 8004 | `POST /agent/run` — planner + tool calls |
+| **3d** | Image Analyser (`image_analyser`) | 8002 | `POST /analyse` — pixel + metadata analysis |
+| **4** | LLM APIs (optional) | — | Gemini / Vertex via env vars, or Ollama on host |
+| **Support** | Property Triage (`property_triage`) | 8003 | Maintenance SLA routing + PostgreSQL audit (not Layer 4) |
+| **UI** | Streamlit (`frontend_ui`) | 8501 | Direct upload + history dashboard |
+
+Property Triage is a **supporting maintenance service** integrated by Image Analyser and the agent. It is **not** Layer 4 in the guideline sense (Layer 4 = LLM APIs).
 
 ## Quick start
 
@@ -21,43 +27,48 @@ docker compose up --build
 Then open:
 
 - Partner WebUI (Layer 1): http://localhost:8502
-- n8n: http://localhost:5678
-- Layers 3+4 UI: http://localhost:8501
-- Layer 3 docs: http://localhost:8002/docs
-- Layer 4 docs: http://localhost:8003/docs
+- n8n (Layer 2): http://localhost:5678
+- Streamlit UI: http://localhost:8501
+- RAG docs: http://localhost:8001/docs
+- Image Analyser docs: http://localhost:8002/docs
+- LangGraph Agent docs: http://localhost:8004/docs
+- Guardrails docs: http://localhost:8005/docs
+- Property Triage docs: http://localhost:8003/docs
 
-See `code_Layer1_2_WebUI_n8n/README.md` for n8n workflow import and webhook troubleshooting.
+Optional: run [Ollama](https://ollama.com) on the host for RAG insights and chat (`OLLAMA_URL` defaults to `http://host.docker.internal:11434`).
 
-## Test Layer 3 → Layer 4
+See `INTEGRATION.md` for curl test checklist and `code_Layer1_2_WebUI_n8n/README.md` for n8n workflow import.
 
-Upload an image named like `kitchen_leak.jpg` and enter:
+## n8n pipeline (Layer 2)
 
-`There is a severe water leak near the sink`
+`property_triage_workflow.json` runs:
 
-Expected triage: **High** or **Emergency** priority with SLA and ticket ID.
-
-## API examples
-
-**Layer 4 direct:**
-
-```bash
-curl -X POST http://localhost:8003/triage \
-  -H "Content-Type: application/json" \
-  -d "{\"room_type\":\"kitchen\",\"condition_description\":\"severe water leak and flood\"}"
-```
-
-**Layer 3 + 4 pipeline:** use the Streamlit UI or `POST /analyse` with multipart form (`file` + optional `condition_description`).
+1. Webhook receives listing payload
+2. Guardrails input check
+3. Parallel RAG `/query` + LangGraph `/agent/run`
+4. Image Analyser `/analyse` (multipart or metadata-only)
+5. Guardrails output check on combined answer
+6. Route `residential` vs `commercial` from listing / RAG top hit
+7. Property Triage for maintenance SLA when applicable
 
 ## Project structure
 
 ```text
-code_Layer1_2_WebUI_n8n/ # Layers 1 + 2 (WebUI + n8n)
-code_Image_Analyser/     # Layer 3
-code_Property_Triage/    # Layer 4
-code_Frontend_UI/        # Streamlit UI (Layers 3+4 direct)
+code_Layer1_2_WebUI_n8n/  # Layers 1 + 2 (WebUI + n8n workflows)
+code_RAG_Service/         # Layer 3 — RAG
+code_Guardrails_Service/  # Layer 3 — Guardrails
+code_LangGraph_Agent/     # Layer 3 — Agent
+code_Image_Analyser/      # Layer 3 — Image analysis
+code_Property_Triage/     # Support — maintenance triage + DB
+code_Frontend_UI/         # Streamlit UI
 docker-compose.yml
+INTEGRATION.md
+tests/
 ```
 
-## Course guideline note
+## Local tests
 
-The full course project also includes n8n, RAG, Guardrails, LangGraph, and cloud deployment. This repo focuses on a **stable Layers 3+4 foundation** you can demo and extend later.
+```bash
+docker compose run --rm --no-deps -v "%cd%:/workspace" rag_service sh -c "pip install -q Pillow && cd /workspace && PYTHONPATH=code_Guardrails_Service:code_RAG_Service:code_Image_Analyser python -m unittest tests.test_layer3_services -v"
+python code_RAG_Service/populate_index.py
+```

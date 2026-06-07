@@ -5,6 +5,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+import apartment_chat
+
 st.set_page_config(
     page_title="Property Triage - Layers 3 & 4",
     page_icon="🏢",
@@ -30,7 +32,9 @@ def load_listings():
         return []
 
 
-triage_tab, search_tab = st.tabs(["🛠️ Triage pipeline", "🏠 חיפוש דירות"])
+triage_tab, search_tab, chat_tab = st.tabs(
+    ["🛠️ Triage pipeline", "🏠 חיפוש דירות", "💬 צ'אט דירות"]
+)
 
 with triage_tab:
     st.header("📸 Submit inspection")
@@ -240,3 +244,46 @@ with search_tab:
                 use_container_width=True,
                 hide_index=True,
             )
+
+
+with chat_tab:
+    st.header("💬 צ'אט דירות")
+    chat_listings = load_listings()
+
+    if apartment_chat.ollama_available():
+        st.caption(f"🟢 מחובר ל-Ollama ({apartment_chat.OLLAMA_MODEL})")
+    else:
+        st.caption("🟡 Ollama לא זמין — פועל במצב חוקים מקומי (ללא מפתחות API)")
+
+    if not chat_listings:
+        st.warning("אין נתוני דירות זמינים (listings.json ריק או חסר).")
+    else:
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        col_clear, _ = st.columns([1, 5])
+        with col_clear:
+            if st.button("🗑️ נקה שיחה"):
+                st.session_state.chat_history = []
+
+        for turn in st.session_state.chat_history:
+            with st.chat_message(turn["role"]):
+                st.markdown(turn["content"])
+
+        prompt = st.chat_input("שאלו על הדירות... (למשל: דירת 3 חדרים להשכרה בתל אביב עד 10000)")
+        if prompt:
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("מחפש..."):
+                    reply, source = apartment_chat.answer(
+                        prompt,
+                        chat_listings,
+                        history=st.session_state.chat_history[:-1],
+                    )
+                st.markdown(reply)
+                st.caption(f"מקור: {'Ollama' if source == 'ollama' else 'מנוע חוקים מקומי'}")
+
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})

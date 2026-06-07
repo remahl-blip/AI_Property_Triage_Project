@@ -1,4 +1,6 @@
 [
   {"id": "L001", "title": "דירת 3 חדרים מחודשת בחיפה", "property_type": "apartment", "deal": "sale", "city": "חיפה", "neighborhood": "כרמל", "rooms": 3, "price": 1850000, "size_sqm": 78, "features": ["נוף לים", "מרפסת", "חניה", "מטבח מחודש"], "description": "דירה מוארת עם נוף לים ומטבח חדיש."},
   {"id": "L002", "title": "וילת יוקרה בהרצליה פיתוח", "property_type": "villa", "deal": "sale", "city": "הרצליה", "neighborhood": "פיתוח", "rooms": 6, "price": 8500000, "size_sqm": 320, "features": ["בריכה", "גינה", "בית חכם", "נוף לים"], "description": "וילה יוקרתית סמוך לחוף עם בריכה פרטית."},
-  {"id": "L003", "title": "דירת 4 חדרים להשכרה בתל אביב", "property_type": "apartment", "deal": "rent", "city": "תל אביב", "neighborhood": "רוטשיל
+  {"id": "L003", "title": "דירת 4 חדרים להשכרה בתל אביב", "property_type": "apartment", "deal": "rent", "city": "תל אביב", "neighborhood": "רוטשילד", "rooms": 4, "price": 9500, "size_sqm": 95, "features": ["מרפסת", "מעלית", "חניה", "ממוזגת"], "description": "דירה מרווחת במרכז העיר קרוב לתחבורה."},
+  {"id": "L004", "title": "בית משפחתי בנתניה", "property_type": "house", "deal": "sale", "city": "נתניה", "neighborhood": "עיר ימים", "rooms": 5, "price": 2450000, "size_sqm": 140, "features": ["גינה", "חניה", "5 חדרים", "ממ\"ד"], "description": "בית משפחתי מרווח עם גינה מטופחת."},
+  {"id": "L005", "title": "סטודיו להשכרה בירושלים", "property_type": "apartment", "deal": "rent", "city": "ירושלים", "neighborhood": "מרכז העיר", "rooms": 1, "price": 3800, "size_sqm": 32, "features": ["מעלית", "מחסן", "ממוזגת"], "description": "סט

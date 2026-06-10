@@ -22,7 +22,7 @@ REAL_ESTATE_HINTS = [
 ]
 
 INVENTED_PRICE_PATTERNS = [
-    r"guaranteed\s+\d+%\s+return",
+    r"guaranteed\s+\d+%(?:\s+return)?",
     r"מובטח\s+\d+%",
     r"רווח\s+מובטח",
     r"price\s+will\s+double",
@@ -30,7 +30,7 @@ INVENTED_PRICE_PATTERNS = [
 
 LEGAL_GUARANTEE_PATTERNS = [
     r"legally\s+guaranteed",
-    r"100%\s+approved",
+    r"100%\s+(?:approved|legal\s+approval)",
     r"מאושר\s+חוקית",
     r"ערבות\s+משפטית",
     r"no\s+risk\s+investment",
@@ -39,7 +39,7 @@ LEGAL_GUARANTEE_PATTERNS = [
 
 FABRICATED_CERT_PATTERNS = [
     r"certified\s+by\s+ministry",
-    r"official\s+permit\s+#\d+",
+    r"(?:official\s+)?permit\s+#\d+",
     r"תעודת\s+היתר\s+רשמית",
     r"אישור\s+משרד\s+השיכון",
     r"license\s+number\s*:\s*\d{6,}",
